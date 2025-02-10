@@ -234,6 +234,18 @@ if ! [[ "$vmName" =~ ^[a-z0-9-]+$ ]]; then
     usage
 fi
 
+# Validate primaryDisk and primaryDatastore
+if [[ -z "$primaryDisk" || -z "$primaryDatastore" ]]; then
+    echo "Error: Both primaryDisk and primaryDatastore must be specified."
+    exit 1
+fi
+
+# Validate primaryDisk format
+if [[ ! "$primaryDisk" =~ ^[a-zA-Z0-9]+$ ]]; then
+    echo "Error: Invalid primaryDisk format: $primaryDisk"
+    exit 1
+fi
+
 check_ssh_access() {
     local user="$1"
     local ip="$2"
