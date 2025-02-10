@@ -40,6 +40,7 @@
 #         Support for multiple network interfaces as a result of the above.
 #         Support for package installations on RHEL and Debian based Linux distros.
 #         Support for package installations on Windows (qemu-guest-agent).
+#         Add LVM and local storage datastore types, currently we only support OnApp Integrated Storage (need an OnApp LVM test environemnt to do this).
 #
 # Example usage:
 # sh convert.sh --swap-size 1024 --host 192.168.117.213 --mac 00:16:3e:25:dc:65 \
@@ -236,12 +237,12 @@ check_ssh_access() {
 
     echo "Checking SSH access for ${user}@${ip}..."
 
-    if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no "${user}@${ip}" exit; then
+    if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no "${user}@${ip}" exit 2>/dev/null; then
         echo "SSH access is available without a password for ${user}@${ip}"
         return 0
     else
         echo "SSH access failed for ${user}@${ip} - Make sure SSH is available with RSA key authentication."
-        return 1
+        exit 1
     fi
 }
 
@@ -417,8 +418,8 @@ x=1
 # Transfer and build the secondary disks (if any)
 for i in "${!SECONDARY_DISKS[@]}"; do
     scp "${SECONDARY_DISKS[$i]}.img" root@${HOST}:/dev/
-    ssh -o StrictHostKeyChecking=no -o root@${HOST} "qm importdisk $VMID /dev/${SECONDARY_DISKS[$i]}.img ${SECONDARY_DATASTORES[$i]}"
-    ssh -o StrictHostKeyChecking=no -o root@${HOST} "qm rescan --vmid $VMID"
-    ssh -o StrictHostKeyChecking=no -o root@${HOST} "qm set $VMID --virtio${x} ${SECONDARY_DATASTORES[$i]}:vm-${VMID}-disk-${x},discard=on"
+    ssh -o StrictHostKeyChecking=no root@${HOST} "qm importdisk $VMID /dev/${SECONDARY_DISKS[$i]}.img ${SECONDARY_DATASTORES[$i]}"
+    ssh -o StrictHostKeyChecking=no root@${HOST} "qm rescan --vmid $VMID"
+    ssh -o StrictHostKeyChecking=no root@${HOST} "qm set $VMID --virtio${x} ${SECONDARY_DATASTORES[$i]}:vm-${VMID}-disk-${x},discard=on"
     ((x++))
 done
