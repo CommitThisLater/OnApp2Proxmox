@@ -38,7 +38,6 @@
 # - ToDo: Specify destination VM specifications (RAM, CPU Cores, etc).
 #         Ability to select destination network bridge in Proxmox for more complex setups (we will implement this).
 #         Support for multiple network interfaces as a result of the above.
-#         Support for package installations on RHEL and Debian based Linux distros.
 #         Support for package installations on Windows (qemu-guest-agent).
 #         Add LVM and local storage datastore types, currently we only support OnApp Integrated Storage (need an OnApp LVM test environemnt to do this).
 #
@@ -390,31 +389,11 @@ if [[ "$osType" == "linux" ]]; then
     # View fstab after changes
     virt-cat --format=raw -a "${primaryDisk}.img" /etc/fstab
 
-    # Add the guest agent
-    virt-customize -a "${primaryDisk}.img" --run-command '
-        if [[ -f /etc/os-release ]]; then
-            . /etc/os-release
-        elif [[ -f /etc/redhat-release ]]; then
-            ID="rhel"
-        fi
+    # Add the qemu guest agent, requires networking at first boot
+    virt-customize -a "${primaryDisk}.img" \
+    --firstboot-install qemu-guest-agent \
+    --firstboot-command "systemctl enable --now qemu-guest-agent"
 
-        case "$ID" in
-            debian|ubuntu)
-                apt-get update && apt-get install -y qemu-guest-agent
-                ;;
-            centos|rhel|rocky|almalinux)
-                if command -v dnf >/dev/null 2>&1; then
-                    dnf install -y qemu-guest-agent
-                else
-                    yum install -y qemu-guest-agent
-                fi
-                ;;
-            *)
-                exit 0
-                ;;
-        esac
-        systemctl enable qemu-guest-agent
-    '
 fi
 
 if [[ "$osType" == "windows" ]]; then
