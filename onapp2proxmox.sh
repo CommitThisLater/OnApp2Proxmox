@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# - OnApp to Proxmox migrations
+# OnApp to Proxmox migrations
 #
 # The script will...
 #
@@ -60,27 +60,29 @@ set -euo pipefail
 #
 # Array of Proxmox host IPs - Add all host IP from your cluster
 # An ssh key is required to transfer and deploy the images
-HOSTS=("192.168.1.10" "192.168.1.20" "192.168.1.30")
+hosts=("192.168.1.10" "192.168.1.20" "192.168.1.30")
 #
 # Where to upload the disk images on the Proxmox side (no trailing slash)
 # We are using /dev here as it has the most space, /root would be a better option
-UPLOAD_DIR="/dev"
+uploadDir="/dev"
+# The SSH user for accessing Proxmox hosts, in most cases should be root
+sshUser="root"
 #################################################
 
-disks_online=false
+disksOnline=false
 # Cleanup function / trap exit
 cleanup() {
     echo "Cleaning up resources... (DO NOT INTERRUPT!)"
     rm -f .lock
 
-    if [[ "$disks_online" == true ]]; then
-        onappstore offline uuid=$PRIMARY_DISK
-        rm -f ${PRIMARY_DISK}.img
+    if [[ "$disksOnline" == true ]]; then
+        onappstore offline uuid=$primaryDisk
+        rm -f ${primaryDisk}.img
 
-        if [[ ${#SECONDARY_DISKS[@]} -gt 0 ]]; then
-            for i in "${!SECONDARY_DISKS[@]}"; do
-                onappstore offline uuid=${SECONDARY_DISKS[$i]}
-                rm -f ${SECONDARY_DISKS[$i]}.img
+        if [[ ${#secondaryDisks[@]} -gt 0 ]]; then
+            for i in "${!secondaryDisks[@]}"; do
+                onappstore offline uuid=${secondaryDisks[$i]}
+                rm -f ${secondaryDisks[$i]}.img
             done
         fi
     fi
@@ -96,22 +98,22 @@ touch .lock
 
 # Usage
 usage() {
-    echo "Usage: $0 --swap-size <SWAP_SIZE_MB> [[ --host <HOST_IP> | --random-host ]] --mac <MAC_ADDRESS> 
-       --vmname <VMNAME> -p <PRIMARY_DISK>:<DATASTORE> 
-         -s <SECONDARY_DISK1>:<DATASTORE> <SECONDARY_DISK2>:<DATASTORE> ... 
+    echo "Usage: $0 --swap-size <swap_SizeMB> [[ --host <hostIP> | --random-host ]] --mac <macAddress> 
+       --vmname <vmName> -p <primaryDisk>:<datastore> 
+         -s <secondaryDisk1>:<datastore> <secondaryDisk>:<datastore> ... 
           --os <linux|windows|other>"
     echo
     echo "Arguments:"
-    echo "  --swap-size <SWAP_SIZE_MB>                                          Size of the swap space in MB (e.g., 1024)"
-    echo "  --host <HOST_IP>                                                    IP address of the Proxmox host (e.g., 192.168.1.100)"
+    echo "  --swap-size <swapSizeMB>                                            Size of the swap space in MB (e.g., 1024)"
+    echo "  --host <hostIP>                                                     IP address of the Proxmox host (e.g., 192.168.1.100)"
     echo "  --random-host                                                       Select a random Proxmox host from the predefined list"
-    echo "  --mac <MAC_ADDRESS>                                                 MAC address for the VM network interface (e.g., 00:1a:2b:3c:4d:5e)"
-    echo "  --vmname <VMNAME>                                                   Name of the VM (only lowercase letters, numbers, and '-' allowed)"
-    echo "  -p <PRIMARY_DISK>:<DATASTORE>                                       Path to the primary disk and associated proxmox datastore"
-    echo "  -s <SECONDARY_DISK1>:<DATASTORE> <SECONDARY_DISK2>:<DATASTORE> ...  Paths to secondary disks and associated datastores(optional)"
+    echo "  --mac <macAddress>                                                  mac address for the VM network interface (e.g., 00:1a:2b:3c:4d:5e)"
+    echo "  --vmname <vmName>                                                   Name of the VM (only lowercase letters, numbers, and '-' allowed)"
+    echo "  -p <primaryDisk>:<datastore>                                        Path to the primary disk and associated proxmox datastore"
+    echo "  -s <secondaryDisk1>:<datastore> <secondaryDisk2>:<datastore> ...    Paths to secondary disks and associated datastores(optional)"
     echo "  --os <linux|windows|other>                                          Specify the OS type (mandatory)"
     echo
-    echo "Example: $0 --swap-size 1024 --random-host --mac 00:1a:2b:3c:4d:5e --vmname vm-name-01 -p pc2qwegju5f740:DataStoreSSD -s hk8udjdi85eg7n:DataStoreSSD k8jhd6wujkb79u:DataStoreHDD --os linux"
+    echo "Example: $0 --swap-size 1024 --random-host --mac 00:1a:2b:3c:4d:5e --vmname my-vm-01 -p pc2qwegju5f740:DataStoreSSD -s hk8udjdi85eg7n:DataStoreSSD k8jhd6wujkb79u:DataStoreHDD --os linux"
     exit 1
 }
 
@@ -128,52 +130,52 @@ if [ $# -lt 7 ]; then
 fi
 
 # Inbound vars
-SWAP_SIZE=""
-HOST=""
-RANDOM_HOST=false
-MAC=""
-VMNAME=""
-OS_TYPE=""
-PRIMARY_DISK=""
-PRIMARY_DATASTORE=""
-SECONDARY_DISKS=()
-SECONDARY_DATASTORES=()
+swapSize=""
+host=""
+randomHost=false
+mac=""
+vmName=""
+osType=""
+primaryDisk=""
+primaryDatastore=""
+secondaryDisks=()
+secondaryDatastores=()
 
 # Parse the command line arguments
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --swap-size)
-            SWAP_SIZE=$2
+            swapSize=$2
             shift 2
             ;;
         --host)
-            HOST=$2
+            host=$2
             shift 2
             ;;
         --random-host)
-            RANDOM_HOST=true
+            randomHost=true
             shift 1
             ;;
         --mac)
-            MAC=$2
+            mac=$2
             shift 2
             ;;
         --vmname)
-            VMNAME=$2
+            vmName=$2
             shift 2
             ;;
         -p) 
-            PRIMARY_DISK=$(echo $2 | cut -d':' -f1)
-            PRIMARY_DATASTORE=$(echo $2 | cut -d':' -f2)
+            primaryDisk=$(echo $2 | cut -d':' -f1)
+            primaryDatastore=$(echo $2 | cut -d':' -f2)
             shift 2
             ;;
         -s) 
-            SECONDARY_DISKS+=($(echo $2 | cut -d':' -f1))
-            SECONDARY_DATASTORES+=($(echo $2 | cut -d':' -f2))
+            secondaryDisks+=($(echo $2 | cut -d':' -f1))
+            secondaryDatastores+=($(echo $2 | cut -d':' -f2))
             shift 2
             ;;
         --os)
-            OS_TYPE=$2
+            osType=$2
             shift 2
             ;;
         *)
@@ -183,53 +185,53 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Ensure that only one of --host or --random-host is used
-if [[ -n "$HOST" && "$RANDOM_HOST" == true ]]; then
+if [[ -n "$host" && "$randomHost" == true ]]; then
     echo "Error: You cannot specify both --host and --random-host."
     usage
-elif [[ -z "$HOST" && "$RANDOM_HOST" == false ]]; then
+elif [[ -z "$host" && "$randomHost" == false ]]; then
     echo "Error: You must specify either --host or --random-host."
     usage
 fi
 
 # Select a random host if --random-host is used
-if [[ "$RANDOM_HOST" == true ]]; then
-    HOST=${HOSTS[$RANDOM % ${#HOSTS[@]}]}
-    echo "Selected random Proxmox host: $HOST"
+if [[ "$randomHost" == true ]]; then
+    host=${hosts[$RANDOM % ${#hosts[@]}]}
+    echo "Selected random Proxmox host: $host"
 fi
 
 # Validate required parameters
-if [ -z "$SWAP_SIZE" ] || [ -z "$HOST" ] || [ -z "$MAC" ] || [ -z "$VMNAME" ] || [ -z "$OS_TYPE" ]; then
+if [ -z "$swapSize" ] || [ -z "$host" ] || [ -z "$mac" ] || [ -z "$vmName" ] || [ -z "$osType" ]; then
     echo "Error: Missing required arguments."
     usage
 fi
 
 # Validate the OS type
-if [[ "$OS_TYPE" != "linux" && "$OS_TYPE" != "windows" && "$OS_TYPE" != "other" ]]; then
+if [[ "$osType" != "linux" && "$osType" != "windows" && "$osType" != "other" ]]; then
     echo "Error: Invalid OS type. Allowed values are linux, windows, or other."
     usage
 fi
 
 # Validate the swap size
-if ! [[ "$SWAP_SIZE" =~ ^[0-9]+$ ]] || [ "$SWAP_SIZE" -le 0 ]; then
+if ! [[ "$swapSize" =~ ^[0-9]+$ ]] || [ "$swapSize" -le 0 ]; then
     echo "Error: Swap size must be a positive integer specified in MB."
     usage
 fi
 
-# Validate the HOST IP address
-if ! [[ "$HOST" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && ! [[ "$HOST" =~ ^[a-fA-F0-9:]+$ ]]; then
-    echo "Error: HOST must be a valid IP address (IPv4 or IPv6)."
+# Validate the host IP address
+if ! [[ "$host" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && ! [[ "$host" =~ ^[a-fA-F0-9:]+$ ]]; then
+    echo "Error: host must be a valid IP address (IPv4 or IPv6)."
     usage
 fi
 
-# Validate the MAC address
-if ! [[ "$MAC" =~ ^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$ ]]; then
-    echo "Error: MAC address must be in the format XX:XX:XX:XX:XX:XX."
+# Validate the mac address
+if ! [[ "$mac" =~ ^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$ ]]; then
+    echo "Error: mac address must be in the format XX:XX:XX:XX:XX:XX."
     usage
 fi
 
-# Validate the VMNAME
-if ! [[ "$VMNAME" =~ ^[a-z0-9-]+$ ]]; then
-    echo "Error: VMNAME must only contain lowercase letters, numbers, and hyphens (-)."
+# Validate the vmName
+if ! [[ "$vmName" =~ ^[a-z0-9-]+$ ]]; then
+    echo "Error: vmName must only contain lowercase letters, numbers, and hyphens (-)."
     usage
 fi
 
@@ -248,112 +250,116 @@ check_ssh_access() {
     fi
 }
 
-check_datastore() {
-    local DATASTORE=$1
-    local PVE_OUTPUT=$(ssh -o StrictHostKeyChecking=no root@${HOST} "pvesm status")
+ssh_exec() {
+    ssh -o StrictHostKeyChecking=no ${sshUser}@"$1" "$2"
+}
 
-    if echo "$PVE_OUTPUT" | awk '{print $1}' | grep -Fxq "$DATASTORE"; then
-        STATUS=$(echo "$PVE_OUTPUT" | awk -v ds="$DATASTORE" '$1 == ds {print $3}')
-        if [ "$STATUS" == "active" ]; then
-            echo "Datastore '$DATASTORE' exists and is active."
+check_datastore() {
+    local datastore=$1
+    local pveOutput=$(ssh -o StrictHostKeyChecking=no ${sshUser}@${host} "pvesm status")
+
+    if echo "$pveOutput" | awk '{print $1}' | grep -Fxq "$datastore"; then
+        status=$(echo "$pveOutput" | awk -v ds="$datastore" '$1 == ds {print $3}')
+        if [ "$status" == "active" ]; then
+            echo "Datastore '$datastore' exists and is active."
         else
-            echo "Error: Datastore '$DATASTORE' exists but is NOT active."
+            echo "Error: Datastore '$datastore' exists but is NOT active."
             exit 1
         fi
     else
-        echo "Error: Datastore '$DATASTORE' does not exist."
+        echo "Error: Datastore '$datastore' does not exist."
         exit 1
     fi
 }
 
 create_disk_image() {
-    local DISK=$1
+    local disk=$1
 
     # Get frontend UUID
-    FRONTEND=$(onappstore getid | awk '{print $2}' | cut -d= -f2)
+    frontend=$(onappstore getid | awk '{print $2}' | cut -d= -f2)
     if [ $? -ne 0 ]; then
         echo "Error: Failed to get frontend ID."
         return 1
     fi
 
     # Bring frontend online
-    onappstore online uuid=$DISK frontend_uuid=$FRONTEND
+    onappstore online uuid=$disk frontend_uuid=$frontend
     if [ $? -ne 0 ]; then
         echo "Error: Failed to bring the frontend online."
         return 1
     fi
-    disks_online=true
+    disksOnline=true
 
     # Create disk image
-    dd if=/dev/mapper/$DISK of=${DISK}.img bs=1M
+    dd if=/dev/mapper/$disk of=${disk}.img bs=1M
     if [ $? -ne 0 ]; then
         echo "Error: Disk image creation failed."
         return 1
     fi
 
-    onappstore offline uuid=$DISK
-    disks_online=false
+    onappstore offline uuid=$disk
+    disksOnline=false
 
-    echo "Disk image creation for $DISK successful."
+    echo "Disk image creation for $disk successful."
     return 0
 }
 
 # Make sure we can SSH to the Proxmox host
-check_ssh_access "root" "$HOST"
+check_ssh_access "${sshUser}" "$host"
 
 # Make sure the datastores exist and are active
-check_datastore "$PRIMARY_DATASTORE"
+check_datastore "$primaryDatastore"
 
-for DS in "${SECONDARY_DATASTORES[@]}"; do
-    check_datastore "$DS"
+for ds in "${secondaryDatastores[@]}"; do
+    check_datastore "$ds"
 done
 
-# Get the next VM ID from Proxmox on the $HOST server
-VMID=$(ssh root@${HOST} "pvesh get /cluster/nextid")
-if [ -z "$VMID" ]; then
-    echo "Error: Unable to get a valid VMID from Proxmox."
+# Get the next VM ID from Proxmox on the $host server
+vmid=$(ssh ${sshUser}@${host} "pvesh get /cluster/nextid")
+if [ -z "$vmid" ]; then
+    echo "Error: Unable to get a valid vmid from Proxmox."
     exit 1
 fi
 
 # Remove existing local disk images
-if [[ -e "${PRIMARY_DISK}.img" ]]; then
-    rm ${PRIMARY_DISK}.img
+if [[ -e "${primaryDisk}.img" ]]; then
+    rm ${primaryDisk}.img
 fi
-create_disk_image "$PRIMARY_DISK"
+create_disk_image "$primaryDisk"
 
 # Secondary disks if any
-if [ ${#SECONDARY_DISKS[@]} -gt 0 ]; then
-    for i in "${!SECONDARY_DISKS[@]}"; do
-        if [[ -e "${SECONDARY_DISKS[$i]}.img" ]]; then
-            rm ${SECONDARY_DISKS[$i]}.img
+if [ ${#secondaryDisks[@]} -gt 0 ]; then
+    for i in "${!secondaryDisks[@]}"; do
+        if [[ -e "${secondaryDisks[$i]}.img" ]]; then
+            rm ${secondaryDisks[$i]}.img
         fi
-        create_disk_image ${SECONDARY_DISKS[$i]}
+        create_disk_image ${secondaryDisks[$i]}
     done
 fi
 
 # Linux specific customisations
-if [[ "$OS_TYPE" == "linux" ]]; then
+if [[ "$osType" == "linux" ]]; then
 
     # Resize the image to allow for swap
-    qemu-img resize -f raw "${PRIMARY_DISK}.img" +${SWAP_SIZE}M
-    virt-customize -a "${PRIMARY_DISK}.img" --run-command 'growpart /dev/sda 1 && resize2fs /dev/sda1'
+    qemu-img resize -f raw "${primaryDisk}.img" +${swapSize}M
+    virt-customize -a "${primaryDisk}.img" --run-command 'growpart /dev/sda 1 && resize2fs /dev/sda1'
 
     # Create a swapfile
-    virt-customize -a "${PRIMARY_DISK}.img" \
-    --run-command "dd if=/dev/zero of=/swapfile bs=1M count=$SWAP_SIZE" \
+    virt-customize -a "${primaryDisk}.img" \
+    --run-command "dd if=/dev/zero of=/swapfile bs=1M count=$swapSize" \
     --run-command "chmod 600 /swapfile" \
     --run-command "mkswap /swapfile"
 
     # View fstab before changes
-    virt-cat --format=raw -a "${PRIMARY_DISK}.img" /etc/fstab
+    virt-cat --format=raw -a "${primaryDisk}.img" /etc/fstab
 
     # Update /etc/fstab to add the new swapfile
-    virt-customize -a "${PRIMARY_DISK}.img" \
+    virt-customize -a "${primaryDisk}.img" \
     --run-command "sed -i '/swap/d' /etc/fstab" \
     --run-command "echo '/swapfile none swap sw 0 0' >> /etc/fstab"
 
     # A messy restructure of the fstab for missing swap
-    virt-customize -a "${PRIMARY_DISK}.img" --run-command "
+    virt-customize -a "${primaryDisk}.img" --run-command "
     awk '{
         if (\$1 == \"/dev/vdk\") \$1 = \"/dev/vdj\";
         else if (\$1 == \"/dev/vdj1\") \$1 = \"/dev/vdi1\";
@@ -376,16 +382,16 @@ if [[ "$OS_TYPE" == "linux" ]]; then
     "
 
     # Build grub
-    virt-customize -a "${PRIMARY_DISK}.img" \
+    virt-customize -a "${primaryDisk}.img" \
     --run-command 'echo "(hd0) /dev/sda" > /boot/grub/device.map' \
     --run-command 'grub-install /dev/sda' --run-command 'update-grub' \
     --run-command "find /boot/grub -type f -exec sed -i 's|/dev/sda|/dev/vda|g' {} \;"
 
     # View fstab after changes
-    virt-cat --format=raw -a "${PRIMARY_DISK}.img" /etc/fstab
+    virt-cat --format=raw -a "${primaryDisk}.img" /etc/fstab
 
     # Add the guest agent
-    virt-customize -a "${PRIMARY_DISK}.img" --run-command '
+    virt-customize -a "${primaryDisk}.img" --run-command '
         if [[ -f /etc/os-release ]]; then
             . /etc/os-release
         elif [[ -f /etc/redhat-release ]]; then
@@ -411,13 +417,13 @@ if [[ "$OS_TYPE" == "linux" ]]; then
     '
 fi
 
-if [[ "$OS_TYPE" == "windows" ]]; then
+if [[ "$osType" == "windows" ]]; then
     :
     # Windows specific customisations
     # Currently nothing is required here for a standard Windows VM
 fi
 
-if [[ "$OS_TYPE" == "other" ]]; then
+if [[ "$osType" == "other" ]]; then
     :
     # Other OS specific customisations
     # In this instance we assume other is for pfSense as that was relevant to this project at the time of development.
@@ -425,24 +431,24 @@ if [[ "$OS_TYPE" == "other" ]]; then
 fi
 
 # Transfer and build the VM on Proxmox
-scp ${PRIMARY_DISK}.img root@${HOST}:${UPLOAD_DIR}/
-ssh -o StrictHostKeyChecking=no root@${HOST} "qm create $VMID \
-  --name $VMNAME \
-  --virtio0 ${PRIMARY_DATASTORE}:0,discard=on,import-from=${UPLOAD_DIR}/${PRIMARY_DISK}.img \
+scp ${primaryDisk}.img ${sshUser}@${host}:${uploadDir}/
+ssh_exec "$host" "qm create $vmid \
+  --name $vmName \
+  --virtio0 ${primaryDatastore}:0,discard=on,import-from=${uploadDir}/${primaryDisk}.img \
   --agent enabled=1,type=virtio,freeze-fs-on-backup=1 \
   --ostype l26 \
   --cores 4 \
   --memory 4096 \
-  --net0 virtio,bridge=vmbr0,macaddr=${MAC} \
+  --net0 virtio,bridge=vmbr0,macaddr=${mac} \
   --onboot 1 \
   --scsihw virtio-scsi-pci"
 
 x=1
 # Transfer and build the secondary disks (if any)
-for i in "${!SECONDARY_DISKS[@]}"; do
-    scp "${SECONDARY_DISKS[$i]}.img" root@${HOST}:${UPLOAD_DIR}/
-    ssh -o StrictHostKeyChecking=no root@${HOST} "qm importdisk $VMID ${UPLOAD_DIR}/${SECONDARY_DISKS[$i]}.img ${SECONDARY_DATASTORES[$i]}"
-    ssh -o StrictHostKeyChecking=no root@${HOST} "qm rescan --vmid $VMID"
-    ssh -o StrictHostKeyChecking=no root@${HOST} "qm set $VMID --virtio${x} ${SECONDARY_DATASTORES[$i]}:vm-${VMID}-disk-${x},discard=on"
+for i in "${!secondaryDisks[@]}"; do
+    scp "${secondaryDisks[$i]}.img" ${sshUser}@${host}:${uploadDir}/
+    ssh_exec "$host" "qm importdisk $vmid ${uploadDir}/${secondaryDisks[$i]}.img ${secondaryDatastores[$i]}"
+    ssh_exec "$host" "qm rescan --vmid $vmid"
+    ssh_exec "$host" "qm set $vmid --virtio${x} ${secondaryDatastores[$i]}:vm-${vmid}-disk-${x},discard=on"
     ((x++))
 done
