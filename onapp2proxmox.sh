@@ -62,7 +62,9 @@ set -euo pipefail
 # An ssh key is required to transfer and deploy the images
 HOSTS=("192.168.1.10" "192.168.1.20" "192.168.1.30")
 #
-#
+# Where to upload the disk images on the Proxmox side (no trailing slash)
+# We are using /dev here as it has the most space, /root would be a better option
+UPLOAD_DIR="/dev"
 #################################################
 
 disks_online=false
@@ -423,10 +425,10 @@ if [[ "$OS_TYPE" == "other" ]]; then
 fi
 
 # Transfer and build the VM on Proxmox
-scp ${PRIMARY_DISK}.img root@${HOST}:/dev/
+scp ${PRIMARY_DISK}.img root@${HOST}:${UPLOAD_DIR}/
 ssh -o StrictHostKeyChecking=no root@${HOST} "qm create $VMID \
   --name $VMNAME \
-  --virtio0 ${PRIMARY_DATASTORE}:0,discard=on,import-from=/dev/${PRIMARY_DISK}.img \
+  --virtio0 ${PRIMARY_DATASTORE}:0,discard=on,import-from=${UPLOAD_DIR}/${PRIMARY_DISK}.img \
   --agent enabled=1,type=virtio,freeze-fs-on-backup=1 \
   --ostype l26 \
   --cores 4 \
@@ -438,8 +440,8 @@ ssh -o StrictHostKeyChecking=no root@${HOST} "qm create $VMID \
 x=1
 # Transfer and build the secondary disks (if any)
 for i in "${!SECONDARY_DISKS[@]}"; do
-    scp "${SECONDARY_DISKS[$i]}.img" root@${HOST}:/dev/
-    ssh -o StrictHostKeyChecking=no root@${HOST} "qm importdisk $VMID /dev/${SECONDARY_DISKS[$i]}.img ${SECONDARY_DATASTORES[$i]}"
+    scp "${SECONDARY_DISKS[$i]}.img" root@${HOST}:${UPLOAD_DIR}/
+    ssh -o StrictHostKeyChecking=no root@${HOST} "qm importdisk $VMID ${UPLOAD_DIR}/${SECONDARY_DISKS[$i]}.img ${SECONDARY_DATASTORES[$i]}"
     ssh -o StrictHostKeyChecking=no root@${HOST} "qm rescan --vmid $VMID"
     ssh -o StrictHostKeyChecking=no root@${HOST} "qm set $VMID --virtio${x} ${SECONDARY_DATASTORES[$i]}:vm-${VMID}-disk-${x},discard=on"
     ((x++))
