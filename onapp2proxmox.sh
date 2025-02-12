@@ -164,13 +164,25 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -p) 
-            primaryDisk=$(echo $2 | cut -d':' -f1)
-            primaryDatastore=$(echo $2 | cut -d':' -f2)
+            if [[ "$2" =~ : ]]; then
+                primaryDisk=$(echo $2 | cut -d':' -f1)
+                primaryDatastore=$(echo $2 | cut -d':' -f2)
+            else
+                echo "Error: Primary disk and datastore must be in the format 'diskid:datastore'."
+                usage
+                exit 1
+            fi
             shift 2
             ;;
         -s) 
-            secondaryDisks+=($(echo $2 | cut -d':' -f1))
-            secondaryDatastores+=($(echo $2 | cut -d':' -f2))
+            if [[ "$2" =~ : ]]; then
+                secondaryDisks+=($(echo $2 | cut -d':' -f1))
+                secondaryDatastores+=($(echo $2 | cut -d':' -f2))
+            else
+                echo "Error: Secondary disk and datastore must be in the format 'diskid:datastore'."
+                usage
+                exit 1
+            fi
             shift 2
             ;;
         --os)
@@ -237,12 +249,28 @@ fi
 # Validate primaryDisk and primaryDatastore
 if [[ -z "$primaryDisk" || -z "$primaryDatastore" ]]; then
     echo "Error: Both primaryDisk and primaryDatastore must be specified."
+    usage
     exit 1
 fi
 
 # Validate primaryDisk format
 if [[ ! "$primaryDisk" =~ ^[a-zA-Z0-9]+$ ]]; then
-    echo "Error: Invalid primaryDisk format: $primaryDisk"
+    echo "Error: Invalid primaryDisk format: $primaryDisk. Must be alphanumeric."
+    usage
+    exit 1
+fi
+
+# Validate primaryDatastore format
+if [[ ! "$primaryDatastore" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "Error: Invalid primaryDatastore format: $primaryDatastore. Must be alphanumeric, '_', or '-'."
+    usage
+    exit 1
+fi
+
+# Validate secondary disks and datastores
+if [[ ${#secondaryDisks[@]} -gt 0 && ${#secondaryDisks[@]} -ne ${#secondaryDatastores[@]} ]]; then 
+    echo "Error: Number of secondary disks does not match number of secondary datastores." 
+    usage
     exit 1
 fi
 
