@@ -41,9 +41,9 @@
 #         Support for package installations on Windows (qemu-guest-agent).
 #         Add LVM and local storage datastore types, currently we only support OnApp Integrated Storage (need an OnApp LVM test environemnt to do this).
 #
-# Example usage:
-# sh convert.sh --swap-size 1024 --host 192.168.117.213 --mac 00:16:3e:25:dc:65 \
-#  --vmname vm-name -p l7a3u8sngmrtc0:Ceph_Master -s 4u32reaicnk075:Ceph_Master \
+# Example usage with two secondary disks:
+# sh convert.sh --swap-size 1024 --host 192.168.117.213 --mac 00:16:3e:25:dc:65 --vmname vm-name \
+#  -p l7a3u8sngmrtc0:Ceph_Master -s 4u32reaicnk075:Ceph_Master -s fj8dndji9ed6g2:Ceph_Master \
 #   --os linux
 ###
 
@@ -346,7 +346,7 @@ create_disk_image() {
 # Make sure we can SSH to the Proxmox host
 check_ssh_access "${sshUser}" "$host"
 
-# Make sure the datastores exist and are active
+# Make sure the datastores exist and are active in Proxmox
 check_datastore "$primaryDatastore"
 
 for ds in "${secondaryDatastores[@]}"; do
