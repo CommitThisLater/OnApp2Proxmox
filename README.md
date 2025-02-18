@@ -27,7 +27,7 @@ You must migrate the primary disk and all other secondary disks.
 - The **source VM must be shut down** before running this script.
 - The script **does not shut down** the source VM automatically.
 - The source OnApp VMs must have **virtio** support, this will be true in most cases.
-  - If using non-virtio, modifications to the controller and disk type configs may be required before booting the VM in Proxmox.
+  - If using non-virtio, modifications to the controller and disk type configs under the hardware panel of the VM may be required before booting the VM in Proxmox.
 - The script requires the **MAC address** of the network interface to maintain the same virtual MAC and avoid network issues inside the VM.
 - This script assumes **OnApp Integrated Storage**.
   - It can be modified to support **local or SAN storage using LVM**. We will probably implement this but don't have access to an OnApp environment with LVM datastores.
@@ -39,10 +39,15 @@ You must migrate the primary disk and all other secondary disks.
 
 Please review the comments at the top of the script as more details will be added there as the development continues. 
 
+## Added in last commit
+
+We have now added support for specifying NICs as part of the migration process using --nic <bridge,macaddr,mtu>
+As mentioned above we ask for the MAC address as this keep the same virtula MAC and avoid any issues, particularly in Windows. 
+To specify multiple interfaces do --mac <bridge,macaddr,mtu> <bridge,macaddr,mtu>
+Make sure you specify the primary interface first!
+
 ## To-Do
-- Allow specifying destination VM specifications (RAM, CPU cores, etc.).
-- Ability to select destination network bridge in Proxmox for more complex setups (we will implement this).
-  Support for multiple network interfaces as a result of the above.
+- Allow specifying destination VM specifications (RAM, CPU cores, etc.) - We will implement this soon
   
 # Example usage:
-sh onapp2proxmox.sh --swap-size 1024 --host 192.168.1.2 --mac 00:16:3d:26:dc:64 --vmname vm-name -p l7a3u8sngmrtc0:Ceph_Master -s 4u32reaicnk075:Ceph_Master --os linux
+sh onapp2proxmox.sh --swap-size 1024 --host 192.168.1.2 --mac 00:16:3d:26:dc:64 --vmname vm-name --nic <bridge,macaddr,mtu> -p l7a3u8sngmrtc0:Ceph_Master -s 4u32reaicnk075:Ceph_Master --os linux
