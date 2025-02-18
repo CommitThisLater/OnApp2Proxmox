@@ -97,22 +97,22 @@ touch .lock
 
 # Usage
 usage() {
-    echo "Usage: $0 --swap-size <swap_SizeMB> [[ --host <hostIP> | --random-host ]] --mac <macAddress> 
-       --vmname <vmName> -p <primaryDisk>:<datastore> 
-         -s <secondaryDisk1>:<datastore> <secondaryDisk>:<datastore> ... 
-          --os <linux|windows|other>"
+    echo "Usage: $0 --swap-size <swap_SizeMB> [[ --host <hostIP> | --random-host ]] --vmname <vmName> 
+            --nic <bridge,macaddr,mtu> <bridge,macaddr,mtu> ... 
+             -p <primaryDisk>:<datastore> -s <secondaryDisk1>:<datastore> <secondaryDisk>:<datastore> ... 
+              --os <linux|windows|other>"
     echo
     echo "Arguments:"
     echo "  --swap-size <swapSizeMB>                                            Size of the swap space in MB (e.g., 1024)"
     echo "  --host <hostIP>                                                     IP address of the Proxmox host (e.g., 192.168.1.100)"
     echo "  --random-host                                                       Select a random Proxmox host from the predefined list"
-    echo "  --mac <macAddress>                                                  mac address for the VM network interface (e.g., 00:1a:2b:3c:4d:5e)"
     echo "  --vmname <vmName>                                                   Name of the VM (only lowercase letters, numbers, and '-' allowed)"
+    echo "  --nics <bridge,macaddr,mtu> ...                                     Network interfaces for the VM (primary NIC is mandatory, for multiple NICs specify with --nics <bridge,macaddr,mtu> <bridge,macaddr,mtu> putting the primary first)"
     echo "  -p <primaryDisk>:<datastore>                                        Path to the primary disk and associated proxmox datastore"
     echo "  -s <secondaryDisk1>:<datastore> <secondaryDisk2>:<datastore> ...    Paths to secondary disks and associated datastores(optional)"
     echo "  --os <linux|windows|other>                                          Specify the OS type (mandatory)"
     echo
-    echo "Example: $0 --swap-size 1024 --random-host --mac 00:1a:2b:3c:4d:5e --vmname my-vm-01 -p pc2qwegju5f740:DataStoreSSD -s hk8udjdi85eg7n:DataStoreSSD k8jhd6wujkb79u:DataStoreHDD --os linux"
+    echo "Example: $0 --swap-size 1024 --random-host --vmname my-vm-01 --nics <vmbr0,00:1a:2b:3c:4d:5e,1500> -p pc2qwegju5f740:DataStoreSSD -s hk8udjdi85eg7n:DataStoreSSD k8jhd6wujkb79u:DataStoreHDD --os linux"
     exit 1
 }
 
@@ -132,13 +132,13 @@ fi
 swapSize=""
 host=""
 randomHost=false
-mac=""
 vmName=""
 osType=""
 primaryDisk=""
 primaryDatastore=""
 secondaryDisks=()
 secondaryDatastores=()
+nics=()
 
 # Parse the command line arguments
 while [[ $# -gt 0 ]]; do
@@ -154,10 +154,6 @@ while [[ $# -gt 0 ]]; do
         --random-host)
             randomHost=true
             shift 1
-            ;;
-        --mac)
-            mac=$2
-            shift 2
             ;;
         --vmname)
             vmName=$2
@@ -183,6 +179,11 @@ while [[ $# -gt 0 ]]; do
                 usage
                 exit 1
             fi
+            shift 2
+            ;;
+        --nics)
+            nicsInput=$2
+            IFS=' ' read -r -a nics <<< "$(echo "$nicsInput" | tr ',' ' ')"
             shift 2
             ;;
         --os)
@@ -234,12 +235,6 @@ if ! [[ "$host" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && ! [[ "$host" =~ ^[a-fA-F0
     usage
 fi
 
-# Validate the mac address
-if ! [[ "$mac" =~ ^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$ ]]; then
-    echo "Error: mac address must be in the format XX:XX:XX:XX:XX:XX."
-    usage
-fi
-
 # Validate the vmName
 if ! [[ "$vmName" =~ ^[a-z0-9-]+$ ]]; then
     echo "Error: vmName must only contain lowercase letters, numbers, and hyphens (-)."
@@ -273,6 +268,15 @@ if [[ ${#secondaryDisks[@]} -gt 0 && ${#secondaryDisks[@]} -ne ${#secondaryDatas
     usage
     exit 1
 fi
+
+# Validate NIC format
+for nic in "${nics[@]}"; do
+    if ! [[ "$nic" =~ ^[a-zA-Z0-9_-]+,[0-9a-fA-F:]+,[0-9]+$ ]]; then
+        echo "Error: Invalid NIC format. Use bridge,macaddr,mtu."
+        usage
+        exit 1
+    fi
+done
 
 check_ssh_access() {
     local user="$1"
@@ -449,6 +453,15 @@ if [[ "$osType" == "other" ]]; then
     # This section will generally cover unknown OS types and as such, should be customised to fit your use case.
 fi
 
+# Prepare network arguments for Proxmox
+net_args=()
+for nic in "${nics[@]}"; do
+    bridge=$(echo $nic | cut -d',' -f1)
+    macaddr=$(echo $nic | cut -d',' -f2)
+    mtu=$(echo $nic | cut -d',' -f3)
+    net_args+=("--net${#net_args[@]} virtio,bridge=${bridge},macaddr=${macaddr},mtu=${mtu},firewall=1")
+done
+
 # Transfer and build the VM on Proxmox
 scp ${primaryDisk}.img ${sshUser}@${host}:${uploadDir}/
 ssh_exec "$host" "qm create $vmid \
@@ -458,7 +471,7 @@ ssh_exec "$host" "qm create $vmid \
   --ostype l26 \
   --cores 4 \
   --memory 4096 \
-  --net0 virtio,bridge=vmbr0,macaddr=${mac} \
+  ${net_args[@]} \
   --onboot 1 \
   --scsihw virtio-scsi-pci"
 
