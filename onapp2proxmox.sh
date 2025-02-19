@@ -2,49 +2,10 @@
 #
 # OnApp to Proxmox migrations
 #
-# The script will...
-#
-# 1, Take a copy of the specified disk images using dd.
-# 2, Remove the swap space which was previously on a separate physical disk (linux).
-# 3, Modify the disk images to add swap space under /swapfile (linux).
-# 4, Install the qemu-guest-agent package (linux).
-# 5, Create a new VM on the Proxmox host.
-# 6, Transfer and import the disk images.
-#
-# We support Linux, Windows, and other OS types.
-# Linux customisations are listed above, Windows should not require any additional customisations to boot in Proxmox in most cases
-# Other OS types will require customisations to fit your use case.
-#
-# The source VM must be shutdown before running this script.
-# The script will not shutdown the source VM.
-#
-# Do not attempt to move the swap disk for Linux VMs, this script will create the swap space on the primary disk.
-# You must move the primary disk and all secondary disks as part of the migration.
-#
-# We assume all source OnApp VMs are running with virtio support, modifications to the controller and disk type may be required for non-virtio VMs.
-#
-# It's a good idea to keep the same virtual mac address for the network interface to avoid network issues 
-# The script therefore requires the mac address to be specified.
-#
-# This script assumes you are running OnApp Integrated Storage.
-# It can be easily modified to support local or SAN storage which uses LVM.
-#
-# It needs to be run from either the OnApp hosts or backup servers to gain access to the OnApp storage layer.
-# Enough disk space should be available to temporarily store the disk images on both ends.
-# The script will remove the disk images on the source side after the VM has been created on Proxmox, we do not touch the source VM.
-# The disk images should be removed from the Proxmox side after a successful migration.
-# Running the script from the backup server on the OnApp side is a good choice.
-#
-# - ToDo: Specify destination VM specifications (RAM, CPU Cores, etc).
-#         Ability to select destination network bridge in Proxmox for more complex setups (we will implement this).
-#         Support for multiple network interfaces as a result of the above.
-#         Support for package installations on Windows (qemu-guest-agent).
-#         Add LVM and local storage datastore types, currently we only support OnApp Integrated Storage (need an OnApp LVM test environemnt to do this).
-#
-# Example usage with two secondary disks:
-# sh convert.sh --swap-size 1024 --host 192.168.117.213 --mac 00:16:3e:25:dc:65 --vmname vm-name \
+# Example usage with two secondary disks, two NICs, and Linux OS:
+# sh convert.sh --swap-size 1024 --host 192.168.117.213 --vmname vm-name --cores=8 --memory=8192 \
 #  -p l7a3u8sngmrtc0:Ceph_Master -s 4u32reaicnk075:Ceph_Master -s fj8dndji9ed6g2:Ceph_Master \
-#   --os linux
+#   --nics vmbr0,00:16:3e:25:dc:64,1500 vmbr1,00:16:3e:25:dc:65,9000 --os linux
 ###
 
 # Check if the script is running in bash
@@ -105,6 +66,8 @@ usage() {
     echo "Arguments:"
     echo "  --swap-size <swapSizeMB>                                            Size of the swap space in MB (e.g., 1024)"
     echo "  --host <hostIP>                                                     IP address of the Proxmox host (e.g., 192.168.1.100)"
+    echo "  --cores <numCores>                                                  Number of CPU cores (default: 4)"
+    echo "  --memory <memoryMB>                                                 Amount of memory in MB (default: 4096)"
     echo "  --random-host                                                       Select a random Proxmox host from the predefined list"
     echo "  --vmname <vmName>                                                   Name of the VM (only lowercase letters, numbers, and '-' allowed)"
     echo "  --nics <bridge,macaddr,mtu> ...                                     Network interfaces for the VM (primary NIC is mandatory, for multiple NICs specify with --nics <bridge,macaddr,mtu> <bridge,macaddr,mtu> putting the primary first)"
@@ -112,7 +75,7 @@ usage() {
     echo "  -s <secondaryDisk1>:<datastore> <secondaryDisk2>:<datastore> ...    Paths to secondary disks and associated datastores(optional)"
     echo "  --os <linux|windows|other>                                          Specify the OS type (mandatory)"
     echo
-    echo "Example: $0 --swap-size 1024 --random-host --vmname my-vm-01 --nics <vmbr0,00:1a:2b:3c:4d:5e,1500> -p pc2qwegju5f740:DataStoreSSD -s hk8udjdi85eg7n:DataStoreSSD k8jhd6wujkb79u:DataStoreHDD --os linux"
+    echo "Example: $0 --swap-size 1024 --random-host --cores=8 --memory=8192 --vmname my-vm-01 --nics <vmbr0,00:1a:2b:3c:4d:5e,1500> -p pc2qwegju5f740:DataStoreSSD -s hk8udjdi85eg7n:DataStoreSSD k8jhd6wujkb79u:DataStoreHDD --nics vmbr0,00:16:3e:25:dc:64,1500 vmbr1,00:16:3e:25:dc:65,9000 --os linux"
     exit 1
 }
 
@@ -145,6 +108,14 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --swap-size)
             swapSize=$2
+            shift 2
+            ;;
+        --cores)
+            cores=$2
+            shift 2
+            ;;
+        --memory)
+            memory=$2
             shift 2
             ;;
         --host)
@@ -276,8 +247,12 @@ if [[ ${#secondaryDisks[@]} -gt 0 && ${#secondaryDisks[@]} -ne ${#secondaryDatas
 fi
 
 # Check inputs for testing
-#echo "Params | --swap-size $swapSize --host $host --vmname $vmName -p ${primaryDisk}:${primaryDatastore} -s ${secondaryDisks[@]} ${secondaryDatastores[@]} --os $osType --nics ${nics[@]}"
-#exit 0
+# echo "Params | --swap-size $swapSize --host $host --vmname $vmName"
+# echo " -p ${primaryDisk}:${primaryDatastore}"
+# echo " -s ${secondaryDisks[@]} ${secondaryDatastores[@]}"
+# echo " --os $osType --nics ${nics[@]}" 
+# echo " --cores ${cores:-4} --memory ${memory:-4096}"
+# exit 0
 
 check_ssh_access() {
     local user="$1"
@@ -463,15 +438,24 @@ for nic in "${nics[@]}"; do
     net_args+=("--net${#net_args[@]} virtio,bridge=${bridge},macaddr=${macaddr},mtu=${mtu},firewall=1")
 done
 
+# Set pmosType based on osType
+if [[ "$osType" == "linux" ]]; then
+    pmosType="l26"
+elif [[ "$osType" == "windows" ]]; then
+    pmosType="win2k8"
+else
+    pmosType="other"
+fi
+
 # Transfer and build the VM on Proxmox
 scp ${primaryDisk}.img ${sshUser}@${host}:${uploadDir}/
 ssh_exec "$host" "qm create $vmid \
   --name $vmName \
   --virtio0 ${primaryDatastore}:0,discard=on,import-from=${uploadDir}/${primaryDisk}.img \
   --agent enabled=1,type=virtio,freeze-fs-on-backup=1 \
-  --ostype l26 \
-  --cores 4 \
-  --memory 4096 \
+  --ostype $pmosType \
+  --cores ${cores:-4} \
+  --memory ${memory:-4096} \
   ${net_args[@]} \
   --onboot 1 \
   --scsihw virtio-scsi-pci"

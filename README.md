@@ -17,11 +17,15 @@ The script will:
 Do not migrate the swap disk for Linux VMs, swap will be added to the primary disk.
 You must migrate the primary disk and all other secondary disks.
 
+CPU cores will default to 4 if not specified.
+RAM will default to 4096MB if not specified.
+
+You must list secondary disks and NICs in the correct order to avoid issues after the migration.
+
 ## Supported Operating Systems
-- **Linux:** The script applies the above customizations automatically.
+- **Linux:** The script applies the above customisations automatically.
 - **Windows:** No additional modifications should be required in most cases.
-- **Other OS Types:** Customization may be required to fit specific use cases. 
-  - This script will be modified further in future to support **pfSense** as it's the valid use case for "other" on this project.
+- **Other OS Types:** Customisation may be required to fit specific use cases. 
 
 ## Requirements
 - The **source VM must be shut down** before running this script.
@@ -37,12 +41,9 @@ You must migrate the primary disk and all other secondary disks.
 - Disk images should be manually removed from the Proxmox side after a successful migration.
 - Running the script from the **backup server on the OnApp side** is recommended.
 
-Please review the comments at the top of the script as more details will be added there as the development continues. 
-
 ## To-Do
-- Allow specifying destination VM specifications (RAM, CPU cores, etc.).
-- Ability to select destination network bridge in Proxmox for more complex setups (we will implement this).
-  Support for multiple network interfaces as a result of the above.
+- Add support for LVM datastores if required in future.
+- Further fine tuning of VM configurations if required.
   
 # Example usage:
-sh onapp2proxmox.sh --swap-size 1024 --host 192.168.1.2 --mac 00:16:3d:26:dc:64 --vmname vm-name -p l7a3u8sngmrtc0:Ceph_Master -s 4u32reaicnk075:Ceph_Master --os linux
+sh onapp2proxmox.sh --swap-size 1024 --host 192.168.1.2 --cores 8 --memory 8192 --vmname vm-name -p l7a3u8sngmrtc0:Ceph_Master -s 4u32reaicnk075:Ceph_Master --nics vmbr0,00:16:3e:25:dc:64,1500 vmbr1,00:16:3e:25:dc:65,9000 --os linux
