@@ -1,4 +1,4 @@
-# OnApp to Proxmox Migrations
+### OnApp to Proxmox Migrations
 
 Automation for migrating OnApp VMs to Proxmox VE.
 
@@ -21,16 +21,16 @@ The script will:
 - If the source VM does not have a swap disk, just omit the --swapsize option.
 - Altering the swap status will break the logic and cause issues with the migrated VM.
 
-# Migrating disks 
+## Migrating disks 
 - You must migrate the primary disk and all other secondary disks.
 - Specify disks in the order they are listed in OnApp, primary first, then secondary disks in order.
 
-# Vm specifications
+## Vm specifications
 - CPU cores will default to 4 if not specified during the migration.
 - RAM will default to 4096MB if not specified during the migration.
 - To specify use --cores and --memory.
 
-# Migrating networks
+## Migrating networks
 - You must specify network interfaces in the correct order with the primary interface first.
 - Use the same virtual MAC address as listed in OnApp to avoid any issues after the migration.
 - List network interfaces as follows, --nic <bridge,macaddr,mtu> <bridge,macaddr,mtu>
