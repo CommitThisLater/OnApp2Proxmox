@@ -1,4 +1,4 @@
-### OnApp to Proxmox Migrations
+# OnApp to Proxmox Migrations
 
 Automation for migrating OnApp VMs to Proxmox VE.
 
@@ -55,13 +55,13 @@ The script will:
 - Running the script from the **backup server on the OnApp side** is recommended.
 
 ## Added in last commit
-We have now added support for specifying NICs as part of the migration process using --nic <bridge,macaddr,mtu>
-As mentioned above we ask for the MAC address as this keeps the same virtual MAC and avoids any issues, particularly in Windows. 
-To specify multiple interfaces do --mac <bridge,macaddr,mtu> <bridge,macaddr,mtu>
-Make sure you specify the primary interface first!
+- We have now added support for specifying NICs as part of the migration process using --nic <bridge,macaddr,mtu>
+- As mentioned above we ask for the MAC address as this keeps the same virtual MAC and avoids any issues, particularly in Windows. 
+- To specify multiple interfaces do --mac <bridge,macaddr,mtu> <bridge,macaddr,mtu>
+- Make sure you specify the primary interface first!
 
-Specifying --swapsize is now optional as not all VMs in OnApp will have swap, as mentioned above, only specify --swapsize if the source VM has a swap disk.
-If you specify swapsize and the source VM doesn't have swap it will break the logic in the script and cause the migration to fail. 
+- Specifying --swapsize is now optional as not all VMs in OnApp will have swap, as mentioned above, only specify --swapsize if the source VM has a swap disk.
+- If you specify swapsize and the source VM doesn't have swap it will break the logic in the script and cause the migration to fail. 
 
 ## To-Do
 - Add support for LVM datastores for OnApp clouds using local or SAN storage. 
