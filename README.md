@@ -14,13 +14,26 @@ The script will:
 5. Create a new VM on the Proxmox host.
 6. Transfer and import the disk images.
 
-Do not migrate the swap disk for Linux VMs, swap will be added to the primary disk.
+## Linux Swap space
+It's important to note that we must maintain the current setup with swap disks as below,
+Do not migrate the swap disk for Linux VMs, swap will be added to the primary disk if a --swapsize is specified during the migration.
+If the source VM has swap, you must migrate it by specifying --swapsize on the migration command.
+If the source VM does not have swap, just omit the --swapsize option.
+Altering the swap status will break the logic.
+
+# Migrating disks 
 You must migrate the primary disk and all other secondary disks.
+Specify the disks in order they are listed in OnApp.
 
-CPU cores will default to 4 if not specified.
-RAM will default to 4096MB if not specified.
+# Vm specifications
+CPU cores will default to 4 if not specified during the migration.
+RAM will default to 4096MB if not specified during the migration.
+To specify use --cores --memory.
 
-You must list secondary disks and NICs in the correct order to avoid issues after the migration.
+# Migrating networks
+You must specify network interfaces in the correct order with the primary interface first.
+Use the same virtual MAC address as listed in OnApp to avoid any issues after the migration.
+List network interfaces as follows, --nic <bridge,macaddr,mtu> <bridge,macaddr,mtu>
 
 ## Supported Operating Systems
 - **Linux:** The script applies the above customisations automatically.
@@ -41,26 +54,22 @@ You must list secondary disks and NICs in the correct order to avoid issues afte
 - Disk images should be manually removed from the Proxmox side after a successful migration.
 - Running the script from the **backup server on the OnApp side** is recommended.
 
-<<<<<<< HEAD
-## To-Do
-- Add support for LVM datastores if required in future.
-- Further fine tuning of VM configurations if required.
-  
-# Example usage:
-sh onapp2proxmox.sh --swap-size 1024 --host 192.168.1.2 --cores 8 --memory 8192 --vmname vm-name -p l7a3u8sngmrtc0:Ceph_Master -s 4u32reaicnk075:Ceph_Master --nics vmbr0,00:16:3e:25:dc:64,1500 vmbr1,00:16:3e:25:dc:65,9000 --os linux
-=======
-Please review the comments at the top of the script as more details will be added there as the development continues. 
-
 ## Added in last commit
-
 We have now added support for specifying NICs as part of the migration process using --nic <bridge,macaddr,mtu>
-As mentioned above we ask for the MAC address as this keep the same virtula MAC and avoid any issues, particularly in Windows. 
+As mentioned above we ask for the MAC address as this keeps the same virtual MAC and avoids any issues, particularly in Windows. 
 To specify multiple interfaces do --mac <bridge,macaddr,mtu> <bridge,macaddr,mtu>
 Make sure you specify the primary interface first!
 
+Specifying --swapsize is now optional as not all VMs in OnApp will have swap, as mentioned above, only specify --swapsize if the source VM has a swap disk.
+If you specify swapsize and the source VM doesn't have swap it will break the logic in the script and cause the migration to fail. 
+
 ## To-Do
-- Allow specifying destination VM specifications (RAM, CPU cores, etc.) - We will implement this soon
+- Add support for LVM datastores for OnApp clouds using local or SAN storage. 
   
 # Example usage:
-sh onapp2proxmox.sh --swap-size 1024 --host 192.168.1.2 --mac 00:16:3d:26:dc:64 --vmname vm-name --nic <bridge,macaddr,mtu> -p l7a3u8sngmrtc0:Ceph_Master -s 4u32reaicnk075:Ceph_Master --os linux
->>>>>>> 4d81c50eecb1f3a55cee64af3d8b911e2a0aa2f2
+Linux:
+sh onapp2proxmox.sh --swap-size 1024 --host 192.168.1.1 --cores 8 --memory 8192 --vmname onapp-vm-01 -p l7a3u8sngmrtc0:Ceph_Storage -s 4u32reaicnk075:Ceph_Storage --os linux --nics vmbr0,00:16:3e:25:dc:64,1500 vmbr1,00:16:3e:25:dc:62,1500
+
+Windows:
+sh onapp2proxmox.sh --host 192.168.1.1 --cores 8 --memory 8192 --vmname onapp-vm-02 -p l7a3u8sngmrtc0:Ceph_Storage -s 4u32reaicnk075:Ceph_Storage --os windows --nics vmbr0,00:16:3e:25:dc:64,1500 vmbr1,00:16:3e:25:dc:62,1500
+
