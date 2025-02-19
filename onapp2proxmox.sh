@@ -32,7 +32,7 @@ sshUser="root"
 disksOnline=false
 # Cleanup function / trap exit
 cleanup() {
-    echo "Cleaning up resources... (DO NOT INTERRUPT!)"
+    notify "Cleaning up resources... (DO NOT INTERRUPT!)"
     rm -f .lock
 
     if [[ "$disksOnline" == true ]]; then
@@ -51,7 +51,7 @@ trap cleanup EXIT
 
 # Check running
 if [[ -e ".lock" ]]; then
-    echo "Script is already running (.lock exists)"
+    notify "Script is already running (.lock exists)"
     exit 1
 fi
 touch .lock
@@ -81,13 +81,13 @@ usage() {
 
 # We need root
 if [ "$(id -u)" -ne 0 ]; then
-    echo "This script must be run as root or with sudo."
+    notify "This script must be run as root or with sudo."
     usage
 fi
 
 # Validate inbound arguments
 if [ $# -lt 7 ]; then
-    echo "Error: At least 7 arguments are required."
+    notify "Error: At least 7 arguments are required."
     usage
 fi
 
@@ -108,6 +108,11 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --swap-size)
             swapSize=$2
+            if [ -n "$swapSize" ]; then
+                if ! [[ "$swapSize" =~ ^[0-9]+$ ]] || [ "$swapSize" -le 0 ]; then
+                    notify "Error: Swap size must be a positive integer specified in MB."
+                    usage
+                fi
             shift 2
             ;;
         --cores)
@@ -120,6 +125,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --host)
             host=$2
+            if ! [[ "$host" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && ! [[ "$host" =~ ^[a-fA-F0-9:]+$ ]]; then
+                notify "Error: host must be a valid IP address (IPv4 or IPv6)."
+                usage
+            fi
             shift 2
             ;;
         --random-host)
@@ -128,6 +137,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --vmname)
             vmName=$2
+            if ! [[ "$vmName" =~ ^[a-z0-9-]+$ ]]; then
+                notify "Error: vmName must only contain lowercase letters, numbers, and hyphens (-)."
+                usage
+            fi
             shift 2
             ;;
         -p) 
@@ -135,7 +148,28 @@ while [[ $# -gt 0 ]]; do
                 primaryDisk=$(echo $2 | cut -d':' -f1)
                 primaryDatastore=$(echo $2 | cut -d':' -f2)
             else
-                echo "Error: Primary disk and datastore must be in the format 'diskid:datastore'."
+                notify "Error: Primary disk and datastore must be in the format 'diskid:datastore'."
+                usage
+                exit 1
+            fi
+
+            # Validate both fields are populated
+            if [[ -z "$primaryDisk" || -z "$primaryDatastore" ]]; then
+                notify "Error: Both primaryDisk and primaryDatastore must be specified."
+                usage
+                exit 1
+            fi
+
+            # Validate primaryDisk format
+            if [[ ! "$primaryDisk" =~ ^[a-zA-Z0-9]+$ ]]; then
+                notify "Error: Invalid primaryDisk format: $primaryDisk. Must be alphanumeric."
+                usage
+                exit 1
+            fi
+
+            # Validate primaryDatastore format
+            if [[ ! "$primaryDatastore" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+                notify "Error: Invalid primaryDatastore format: $primaryDatastore. Must be alphanumeric, '_', or '-'."
                 usage
                 exit 1
             fi
@@ -150,21 +184,34 @@ while [[ $# -gt 0 ]]; do
                 usage
                 exit 1
             fi
+
+            # Validate secondary disks and datastores
+            if [[ ${#secondaryDisks[@]} -gt 0 && ${#secondaryDisks[@]} -ne ${#secondaryDatastores[@]} ]]; then 
+                notify "Error: Number of secondary disks does not match number of secondary datastores." 
+                usage
+                exit 1
+            fi
             shift 2
             ;;
-         --nics)
-            IFS=' ' read -r -a nics <<< "$2"
-            for nic in "${nics[@]}"; do
-                if [[ ! "$nic" =~ ^[a-zA-Z0-9_-]+,[0-9a-fA-F:]+,[0-9]+$ ]]; then
-                    echo "Error: Invalid NIC format. Use bridge,mac-address,mtu."
+        --nics)
+            shift
+            while [[ $# -gt 0 && "$1" =~ ^[a-zA-Z0-9_-]+,[0-9a-fA-F:]+,[0-9]+$ ]]; do
+                # Validate each NIC format (bridge, macaddr, mtu)
+                if [[ ! "$1" =~ ^[a-zA-Z0-9_-]+,[0-9a-fA-F:]+,[0-9]+$ ]]; then
+                    notify "Error: Invalid NIC format. Use bridge,mac-address,mtu."
                     usage
                     exit 1
                 fi
+                nics+=("$1")
+                shift
             done
-            shift 2
             ;;
         --os)
             osType=$2
+            if [[ "$osType" != "linux" && "$osType" != "windows" && "$osType" != "other" ]]; then
+                notify "Error: Invalid OS type. Allowed values are linux, windows, or other."
+                usage
+            fi
             shift 2
             ;;
         *)
@@ -175,96 +222,50 @@ done
 
 # Ensure that only one of --host or --random-host is used
 if [[ -n "$host" && "$randomHost" == true ]]; then
-    echo "Error: You cannot specify both --host and --random-host."
+    notify "Error: You cannot specify both --host and --random-host."
     usage
 elif [[ -z "$host" && "$randomHost" == false ]]; then
-    echo "Error: You must specify either --host or --random-host."
+    notify "Error: You must specify either --host or --random-host."
     usage
 fi
 
 # Select a random host if --random-host is used
 if [[ "$randomHost" == true ]]; then
     host=${hosts[$RANDOM % ${#hosts[@]}]}
-    echo "Selected random Proxmox host: $host"
+    notify "Selected random Proxmox host: $host"
 fi
 
 # Validate required parameters
 if [ -z "$swapSize" ] || [ -z "$host" ] || [ -z "$vmName" ] || [ -z "$osType" ]; then
-    echo "Error: Missing required arguments."
+    notify "Error: Missing required arguments."
     usage
-fi
-
-# Validate the OS type
-if [[ "$osType" != "linux" && "$osType" != "windows" && "$osType" != "other" ]]; then
-    echo "Error: Invalid OS type. Allowed values are linux, windows, or other."
-    usage
-fi
-
-# Validate the swap size
-if ! [[ "$swapSize" =~ ^[0-9]+$ ]] || [ "$swapSize" -le 0 ]; then
-    echo "Error: Swap size must be a positive integer specified in MB."
-    usage
-fi
-
-# Validate the host IP address
-if ! [[ "$host" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && ! [[ "$host" =~ ^[a-fA-F0-9:]+$ ]]; then
-    echo "Error: host must be a valid IP address (IPv4 or IPv6)."
-    usage
-fi
-
-# Validate the vmName
-if ! [[ "$vmName" =~ ^[a-z0-9-]+$ ]]; then
-    echo "Error: vmName must only contain lowercase letters, numbers, and hyphens (-)."
-    usage
-fi
-
-# Validate primaryDisk and primaryDatastore
-if [[ -z "$primaryDisk" || -z "$primaryDatastore" ]]; then
-    echo "Error: Both primaryDisk and primaryDatastore must be specified."
-    usage
-    exit 1
-fi
-
-# Validate primaryDisk format
-if [[ ! "$primaryDisk" =~ ^[a-zA-Z0-9]+$ ]]; then
-    echo "Error: Invalid primaryDisk format: $primaryDisk. Must be alphanumeric."
-    usage
-    exit 1
-fi
-
-# Validate primaryDatastore format
-if [[ ! "$primaryDatastore" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-    echo "Error: Invalid primaryDatastore format: $primaryDatastore. Must be alphanumeric, '_', or '-'."
-    usage
-    exit 1
-fi
-
-# Validate secondary disks and datastores
-if [[ ${#secondaryDisks[@]} -gt 0 && ${#secondaryDisks[@]} -ne ${#secondaryDatastores[@]} ]]; then 
-    echo "Error: Number of secondary disks does not match number of secondary datastores." 
-    usage
-    exit 1
 fi
 
 # Check inputs for testing
-# echo "Params | --swap-size $swapSize --host $host --vmname $vmName"
-# echo " -p ${primaryDisk}:${primaryDatastore}"
-# echo " -s ${secondaryDisks[@]} ${secondaryDatastores[@]}"
-# echo " --os $osType --nics ${nics[@]}" 
-# echo " --cores ${cores:-4} --memory ${memory:-4096}"
+# notify "Params | --swap-size $swapSize --host $host --vmname $vmName"
+# notify " -p ${primaryDisk}:${primaryDatastore}"
+# notify " -s ${secondaryDisks[@]} ${secondaryDatastores[@]}"
+# notify " --os $osType --nics ${nics[@]}" 
+# notify " --cores ${cores:-4} --memory ${memory:-4096}"
 # exit 0
+
+notify() {
+  purple='\033[0;35m'
+  reset='\033[0m'
+  echo -e "${purple}$1${reset}"
+}
 
 check_ssh_access() {
     local user="$1"
     local ip="$2"
 
-    echo "Checking SSH access for ${user}@${ip}..."
+    notify "Checking SSH access for ${user}@${ip}..."
 
     if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no "${user}@${ip}" exit 2>/dev/null; then
-        echo "SSH access is available without a password for ${user}@${ip}"
+        notify "SSH access is available without a password for ${user}@${ip}"
         return 0
     else
-        echo "SSH access failed for ${user}@${ip} - Make sure SSH is available with RSA key authentication."
+        notify "SSH access failed for ${user}@${ip} - Make sure SSH is available with RSA key authentication."
         exit 1
     fi
 }
@@ -280,13 +281,25 @@ check_datastore() {
     if echo "$pveOutput" | awk '{print $1}' | grep -Fxq "$datastore"; then
         status=$(echo "$pveOutput" | awk -v ds="$datastore" '$1 == ds {print $3}')
         if [ "$status" == "active" ]; then
-            echo "Datastore '$datastore' exists and is active."
+            notify "Datastore '$datastore' exists and is active."
         else
-            echo "Error: Datastore '$datastore' exists but is NOT active."
+            notify "Error: Datastore '$datastore' exists but is NOT active."
             exit 1
         fi
     else
-        echo "Error: Datastore '$datastore' does not exist."
+        notify "Error: Datastore '$datastore' does not exist."
+        exit 1
+    fi
+}
+
+check_network() {
+    local network=$1
+    local pveOutput=$(ssh -o StrictHostKeyChecking=no ${sshUser}@${host} "brctl show $network")
+
+    if [[ $? -eq 0 ]]; then
+        notify "Network bridge '$network' exists on $host."
+    else
+        notify "Network bridge '$network' does not exist $host."
         exit 1
     fi
 }
@@ -297,14 +310,14 @@ create_disk_image() {
     # Get frontend UUID
     frontend=$(onappstore getid | awk '{print $2}' | cut -d= -f2)
     if [ $? -ne 0 ]; then
-        echo "Error: Failed to get frontend ID."
+        notify "Error: Failed to get frontend ID."
         return 1
     fi
 
     # Bring frontend online
     onappstore online uuid=$disk frontend_uuid=$frontend
     if [ $? -ne 0 ]; then
-        echo "Error: Failed to bring the frontend online."
+        notify "Error: Failed to bring the frontend online."
         return 1
     fi
     disksOnline=true
@@ -312,14 +325,14 @@ create_disk_image() {
     # Create disk image
     dd if=/dev/mapper/$disk of=${disk}.img bs=1M
     if [ $? -ne 0 ]; then
-        echo "Error: Disk image creation failed."
+        notify "Error: Disk image creation failed."
         return 1
     fi
 
     onappstore offline uuid=$disk
     disksOnline=false
 
-    echo "Disk image creation for $disk successful."
+    notify "Disk image creation for $disk successful."
     return 0
 }
 
@@ -336,7 +349,7 @@ done
 # Get the next VM ID from Proxmox on the $host server
 vmid=$(ssh ${sshUser}@${host} "pvesh get /cluster/nextid")
 if [ -z "$vmid" ]; then
-    echo "Error: Unable to get a valid vmid from Proxmox."
+    notify "Error: Unable to get a valid vmid from Proxmox."
     exit 1
 fi
 
@@ -430,13 +443,15 @@ if [[ "$osType" == "other" ]]; then
 fi
 
 # Prepare network arguments for Proxmox
-net_args=()
+netArgs=()
 for nic in "${nics[@]}"; do
     bridge=$(echo $nic | cut -d',' -f1)
     macaddr=$(echo $nic | cut -d',' -f2)
     mtu=$(echo $nic | cut -d',' -f3)
-    net_args+=("--net${#net_args[@]} virtio,bridge=${bridge},macaddr=${macaddr},mtu=${mtu},firewall=1")
+    check_network $bridge
+    netArgs+=( "--net${#netArgs[@]} virtio,bridge=${bridge},macaddr=${macaddr^^},mtu=${mtu},firewall=1" )
 done
+netArgsStr="${netArgs[@]}"
 
 # Set pmosType based on osType
 if [[ "$osType" == "linux" ]]; then
@@ -456,12 +471,12 @@ ssh_exec "$host" "qm create $vmid \
   --ostype $pmosType \
   --cores ${cores:-4} \
   --memory ${memory:-4096} \
-  ${net_args[@]} \
+  $netArgsStr \
   --onboot 1 \
   --scsihw virtio-scsi-pci"
 
-x=1
 # Transfer and build the secondary disks (if any)
+x=1
 for i in "${!secondaryDisks[@]}"; do
     scp "${secondaryDisks[$i]}.img" ${sshUser}@${host}:${uploadDir}/
     ssh_exec "$host" "qm importdisk $vmid ${uploadDir}/${secondaryDisks[$i]}.img ${secondaryDatastores[$i]}"
