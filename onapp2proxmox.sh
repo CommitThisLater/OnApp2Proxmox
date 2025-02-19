@@ -49,6 +49,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
+notify() {
+  purple='\033[0;35m'
+  reset='\033[0m'
+  echo -e "${purple}$1${reset}"
+}
+
 # Check running
 if [[ -e ".lock" ]]; then
     notify "Script is already running (.lock exists)"
@@ -113,6 +119,7 @@ while [[ $# -gt 0 ]]; do
                     notify "Error: Swap size must be a positive integer specified in MB."
                     usage
                 fi
+            fi
             shift 2
             ;;
         --cores)
@@ -236,7 +243,7 @@ if [[ "$randomHost" == true ]]; then
 fi
 
 # Validate required parameters
-if [ -z "$swapSize" ] || [ -z "$host" ] || [ -z "$vmName" ] || [ -z "$osType" ]; then
+if [ -z "$host" ] || [ -z "$vmName" ] || [ -z "$osType" ]; then
     notify "Error: Missing required arguments."
     usage
 fi
@@ -248,12 +255,6 @@ fi
 # notify " --os $osType --nics ${nics[@]}" 
 # notify " --cores ${cores:-4} --memory ${memory:-4096}"
 # exit 0
-
-notify() {
-  purple='\033[0;35m'
-  reset='\033[0m'
-  echo -e "${purple}$1${reset}"
-}
 
 check_ssh_access() {
     local user="$1"
@@ -372,46 +373,52 @@ fi
 # Linux specific customisations
 if [[ "$osType" == "linux" ]]; then
 
-    # Resize the image to allow for swap
-    qemu-img resize -f raw "${primaryDisk}.img" +${swapSize}M
-    virt-customize -a "${primaryDisk}.img" --run-command 'growpart /dev/sda 1 && resize2fs /dev/sda1'
+    # If a swapsize was provided, create swap on the primary disk
+    if [[ -n "$swapSize" ]]; then
 
-    # Create a swapfile
-    virt-customize -a "${primaryDisk}.img" \
-    --run-command "dd if=/dev/zero of=/swapfile bs=1M count=$swapSize" \
-    --run-command "chmod 600 /swapfile" \
-    --run-command "mkswap /swapfile"
+        notify "A swap size was provided, creating swap on the primary disk..."
 
-    # View fstab before changes
-    virt-cat --format=raw -a "${primaryDisk}.img" /etc/fstab
+        # Resize the image to allow for swap
+        qemu-img resize -f raw "${primaryDisk}.img" +${swapSize}M
+        virt-customize -a "${primaryDisk}.img" --run-command 'growpart /dev/sda 1 && resize2fs /dev/sda1'
 
-    # Update /etc/fstab to add the new swapfile
-    virt-customize -a "${primaryDisk}.img" \
-    --run-command "sed -i '/swap/d' /etc/fstab" \
-    --run-command "echo '/swapfile none swap sw 0 0' >> /etc/fstab"
+        # Create a swapfile
+        virt-customize -a "${primaryDisk}.img" \
+        --run-command "dd if=/dev/zero of=/swapfile bs=1M count=$swapSize" \
+        --run-command "chmod 600 /swapfile" \
+        --run-command "mkswap /swapfile"
 
-    # A messy restructure of the fstab for missing swap
-    virt-customize -a "${primaryDisk}.img" --run-command "
-    awk '{
-        if (\$1 == \"/dev/vdk\") \$1 = \"/dev/vdj\";
-        else if (\$1 == \"/dev/vdj1\") \$1 = \"/dev/vdi1\";
-        else if (\$1 == \"/dev/vdi1\") \$1 = \"/dev/vdh1\";
-        else if (\$1 == \"/dev/vdh1\") \$1 = \"/dev/vdg1\";
-        else if (\$1 == \"/dev/vdg1\") \$1 = \"/dev/vdf1\";
-        else if (\$1 == \"/dev/vdf1\") \$1 = \"/dev/vde1\";
-        else if (\$1 == \"/dev/vde1\") \$1 = \"/dev/vdd1\";
-        else if (\$1 == \"/dev/vdd1\") \$1 = \"/dev/vdc1\";
-        else if (\$1 == \"/dev/vdc1\") \$1 = \"/dev/vdb1\";
-        else if (\$1 == \"/dev/vdb1\") \$1 = \"/dev/vda1\";
-        else if (\$1 == \"/dev/vdg\") \$1 = \"/dev/vdf\";
-        else if (\$1 == \"/dev/vdf\") \$1 = \"/dev/vde\";
-        else if (\$1 == \"/dev/vde\") \$1 = \"/dev/vdd\";
-        else if (\$1 == \"/dev/vdd\") \$1 = \"/dev/vdc\";
-        else if (\$1 == \"/dev/vdc\") \$1 = \"/dev/vdb\";
-        else if (\$1 == \"/dev/vdb\") \$1 = \"/dev/vda\";
-        print;
-    }' /etc/fstab > temp_file && mv temp_file /etc/fstab
-    "
+        # View fstab before changes
+        virt-cat --format=raw -a "${primaryDisk}.img" /etc/fstab
+
+        # Update /etc/fstab to add the new swapfile
+        virt-customize -a "${primaryDisk}.img" \
+        --run-command "sed -i '/swap/d' /etc/fstab" \
+        --run-command "echo '/swapfile none swap sw 0 0' >> /etc/fstab"
+
+        # A messy restructure of the fstab for missing swap
+        virt-customize -a "${primaryDisk}.img" --run-command "
+        awk '{
+            if (\$1 == \"/dev/vdk\") \$1 = \"/dev/vdj\";
+            else if (\$1 == \"/dev/vdj1\") \$1 = \"/dev/vdi1\";
+            else if (\$1 == \"/dev/vdi1\") \$1 = \"/dev/vdh1\";
+            else if (\$1 == \"/dev/vdh1\") \$1 = \"/dev/vdg1\";
+            else if (\$1 == \"/dev/vdg1\") \$1 = \"/dev/vdf1\";
+            else if (\$1 == \"/dev/vdf1\") \$1 = \"/dev/vde1\";
+            else if (\$1 == \"/dev/vde1\") \$1 = \"/dev/vdd1\";
+            else if (\$1 == \"/dev/vdd1\") \$1 = \"/dev/vdc1\";
+            else if (\$1 == \"/dev/vdc1\") \$1 = \"/dev/vdb1\";
+            else if (\$1 == \"/dev/vdb1\") \$1 = \"/dev/vda1\";
+            else if (\$1 == \"/dev/vdg\") \$1 = \"/dev/vdf\";
+            else if (\$1 == \"/dev/vdf\") \$1 = \"/dev/vde\";
+            else if (\$1 == \"/dev/vde\") \$1 = \"/dev/vdd\";
+            else if (\$1 == \"/dev/vdd\") \$1 = \"/dev/vdc\";
+            else if (\$1 == \"/dev/vdc\") \$1 = \"/dev/vdb\";
+            else if (\$1 == \"/dev/vdb\") \$1 = \"/dev/vda\";
+            print;
+        }' /etc/fstab > temp_file && mv temp_file /etc/fstab
+        "
+    fi
 
     # Build grub
     virt-customize -a "${primaryDisk}.img" \
