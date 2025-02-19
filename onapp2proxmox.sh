@@ -181,9 +181,15 @@ while [[ $# -gt 0 ]]; do
             fi
             shift 2
             ;;
-        --nics)
-            nicsInput=$2
-            IFS=' ' read -r -a nics <<< "$(echo "$nicsInput" | tr ',' ' ')"
+         --nics)
+            IFS=' ' read -r -a nics <<< "$2"
+            for nic in "${nics[@]}"; do
+                if [[ ! "$nic" =~ ^[a-zA-Z0-9_-]+,[0-9a-fA-F:]+,[0-9]+$ ]]; then
+                    echo "Error: Invalid NIC format. Use bridge,mac-address,mtu."
+                    usage
+                    exit 1
+                fi
+            done
             shift 2
             ;;
         --os)
@@ -212,7 +218,7 @@ if [[ "$randomHost" == true ]]; then
 fi
 
 # Validate required parameters
-if [ -z "$swapSize" ] || [ -z "$host" ] || [ -z "$mac" ] || [ -z "$vmName" ] || [ -z "$osType" ]; then
+if [ -z "$swapSize" ] || [ -z "$host" ] || [ -z "$vmName" ] || [ -z "$osType" ]; then
     echo "Error: Missing required arguments."
     usage
 fi
@@ -269,14 +275,9 @@ if [[ ${#secondaryDisks[@]} -gt 0 && ${#secondaryDisks[@]} -ne ${#secondaryDatas
     exit 1
 fi
 
-# Validate NIC format
-for nic in "${nics[@]}"; do
-    if ! [[ "$nic" =~ ^[a-zA-Z0-9_-]+,[0-9a-fA-F:]+,[0-9]+$ ]]; then
-        echo "Error: Invalid NIC format. Use bridge,macaddr,mtu."
-        usage
-        exit 1
-    fi
-done
+# Check inputs for testing
+#echo "Params | --swap-size $swapSize --host $host --vmname $vmName -p ${primaryDisk}:${primaryDatastore} -s ${secondaryDisks[@]} ${secondaryDatastores[@]} --os $osType --nics ${nics[@]}"
+#exit 0
 
 check_ssh_access() {
     local user="$1"
