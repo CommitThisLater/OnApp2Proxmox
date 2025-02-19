@@ -15,25 +15,25 @@ The script will:
 6. Transfer and import the disk images.
 
 ## Linux Swap space
-It's important to note that we must maintain the current setup with swap disks as below,
-Do not migrate the swap disk for Linux VMs, swap will be added to the primary disk if a --swapsize is specified during the migration.
-If the source VM has swap, you must migrate it by specifying --swapsize on the migration command.
-If the source VM does not have swap, just omit the --swapsize option.
-Altering the swap status will break the logic.
+- It's important to note that we must maintain the current setup with swap disks as below,
+- Do not migrate the swap disk as a secondary disk for Linux VMs, swap will be added to the primary disk if a --swapsize is specified during the migration.
+- If the source VM has a swap disk in OnApp, you must migrate it by specifying --swapsize on the migration command.
+- If the source VM does not have a swap disk, just omit the --swapsize option.
+- Altering the swap status will break the logic and cause issues with the migrated VM.
 
 # Migrating disks 
-You must migrate the primary disk and all other secondary disks.
-Specify the disks in order they are listed in OnApp.
+- You must migrate the primary disk and all other secondary disks.
+- Specify disks in the order they are listed in OnApp, primary first, then secondary disks in order.
 
 # Vm specifications
-CPU cores will default to 4 if not specified during the migration.
-RAM will default to 4096MB if not specified during the migration.
-To specify use --cores --memory.
+- CPU cores will default to 4 if not specified during the migration.
+- RAM will default to 4096MB if not specified during the migration.
+- To specify use --cores and --memory.
 
 # Migrating networks
-You must specify network interfaces in the correct order with the primary interface first.
-Use the same virtual MAC address as listed in OnApp to avoid any issues after the migration.
-List network interfaces as follows, --nic <bridge,macaddr,mtu> <bridge,macaddr,mtu>
+- You must specify network interfaces in the correct order with the primary interface first.
+- Use the same virtual MAC address as listed in OnApp to avoid any issues after the migration.
+- List network interfaces as follows, --nic <bridge,macaddr,mtu> <bridge,macaddr,mtu>
 
 ## Supported Operating Systems
 - **Linux:** The script applies the above customisations automatically.
@@ -66,10 +66,6 @@ If you specify swapsize and the source VM doesn't have swap it will break the lo
 ## To-Do
 - Add support for LVM datastores for OnApp clouds using local or SAN storage. 
   
-# Example usage:
-Linux:
-sh onapp2proxmox.sh --swap-size 1024 --host 192.168.1.1 --cores 8 --memory 8192 --vmname onapp-vm-01 -p l7a3u8sngmrtc0:Ceph_Storage -s 4u32reaicnk075:Ceph_Storage --os linux --nics vmbr0,00:16:3e:25:dc:64,1500 vmbr1,00:16:3e:25:dc:62,1500
-
-Windows:
-sh onapp2proxmox.sh --host 192.168.1.1 --cores 8 --memory 8192 --vmname onapp-vm-02 -p l7a3u8sngmrtc0:Ceph_Storage -s 4u32reaicnk075:Ceph_Storage --os windows --nics vmbr0,00:16:3e:25:dc:64,1500 vmbr1,00:16:3e:25:dc:62,1500
-
+## Example usage
+Linux: sh onapp2proxmox.sh --swap-size 1024 --host 192.168.1.1 --cores 8 --memory 8192 --vmname onapp-vm-01 -p l7a3u8sngmrtc0:Ceph_Storage -s 4u32reaicnk075:Ceph_Storage --os linux --nics vmbr0,00:16:3e:25:dc:64,1500 vmbr1,00:16:3e:25:dc:62,1500
+Windows: sh onapp2proxmox.sh --host 192.168.1.1 --cores 8 --memory 8192 --vmname onapp-vm-02 -p l7a3u8sngmrtc0:Ceph_Storage -s 4u32reaicnk075:Ceph_Storage --os windows --nics vmbr0,00:16:3e:25:dc:64,1500 vmbr1,00:16:3e:25:dc:62,1500
