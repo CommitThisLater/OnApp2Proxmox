@@ -14,7 +14,7 @@ if [ -z "$BASH" ]; then
 fi
 
 # Exit on error
-set -euo pipefail
+set -e
 
 ###### Configurations for your environment ######
 #
@@ -39,7 +39,7 @@ cleanup() {
         onappstore offline uuid=$primaryDisk
         rm -f ${primaryDisk}.img
 
-        if [[ ${#secondaryDisks[@]} -gt 0 ]]; then
+        if [[ -v secondaryDisks && ${#secondaryDisks[@]} -gt 0 ]]; then
             for i in "${!secondaryDisks[@]}"; do
                 onappstore offline uuid=${secondaryDisks[$i]}
                 rm -f ${secondaryDisks[$i]}.img
@@ -202,9 +202,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --nics)
             shift
-            while [[ $# -gt 0 && "$1" =~ ^[a-zA-Z0-9_-]+,[0-9a-fA-F:]+,[0-9]+$ ]]; do
+            while [[ $# -gt 0 && "$1" =~ ^[a-zA-Z0-9_.-]+,[0-9a-fA-F:]+,[0-9]+$ ]]; do
                 # Validate each NIC format (bridge, macaddr, mtu)
-                if [[ ! "$1" =~ ^[a-zA-Z0-9_-]+,[0-9a-fA-F:]+,[0-9]+$ ]]; then
+                if [[ ! "$1" =~ ^[a-zA-Z0-9_.-]+,[0-9a-fA-F:]+,[0-9]+$ ]]; then
                     notify "Error: Invalid NIC format. Use bridge,mac-address,mtu."
                     usage
                     exit 1
@@ -343,9 +343,11 @@ check_ssh_access "${sshUser}" "$host"
 # Make sure the datastores exist and are active in Proxmox
 check_datastore "$primaryDatastore"
 
-for ds in "${secondaryDatastores[@]}"; do
-    check_datastore "$ds"
-done
+if [[ -v secondaryDatastores && ${#secondaryDatastores[@]} -gt 0 ]]; then
+    for ds in "${secondaryDatastores[@]}"; do
+        check_datastore "$ds"
+    done
+fi
 
 # Get the next VM ID from Proxmox on the $host server
 vmid=$(ssh ${sshUser}@${host} "pvesh get /cluster/nextid")
@@ -361,7 +363,7 @@ fi
 create_disk_image "$primaryDisk"
 
 # Secondary disks if any
-if [ ${#secondaryDisks[@]} -gt 0 ]; then
+if [[ -v secondaryDisks && ${#secondaryDisks[@]} -gt 0 ]]; then
     for i in "${!secondaryDisks[@]}"; do
         if [[ -e "${secondaryDisks[$i]}.img" ]]; then
             rm ${secondaryDisks[$i]}.img
@@ -484,10 +486,13 @@ ssh_exec "$host" "qm create $vmid \
 
 # Transfer and build the secondary disks (if any)
 x=1
-for i in "${!secondaryDisks[@]}"; do
-    scp "${secondaryDisks[$i]}.img" ${sshUser}@${host}:${uploadDir}/
-    ssh_exec "$host" "qm importdisk $vmid ${uploadDir}/${secondaryDisks[$i]}.img ${secondaryDatastores[$i]}"
-    ssh_exec "$host" "qm rescan --vmid $vmid"
-    ssh_exec "$host" "qm set $vmid --virtio${x} ${secondaryDatastores[$i]}:vm-${vmid}-disk-${x},discard=on"
-    ((x++))
-done
+
+if [[ -v secondaryDisks && ${#secondaryDisks[@]} -gt 0 ]]; then
+    for i in "${!secondaryDisks[@]}"; do
+        scp "${secondaryDisks[$i]}.img" ${sshUser}@${host}:${uploadDir}/
+        ssh_exec "$host" "qm importdisk $vmid ${uploadDir}/${secondaryDisks[$i]}.img ${secondaryDatastores[$i]}"
+        ssh_exec "$host" "qm rescan --vmid $vmid"
+        ssh_exec "$host" "qm set $vmid --virtio${x} ${secondaryDatastores[$i]}:vm-${vmid}-disk-${x},discard=on"
+        ((x++))
+    done
+fi
